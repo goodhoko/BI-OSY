@@ -1,0 +1,150 @@
+Úkolem je realizovat třídu, která bude umožňovat rychle řešit problémy v oblasti konfigurace sítí.
+
+Předpokládáme síťovou infrastrukturu. V ní se nachází servery propojené vysokorychlostními linkami. Dvojice serverů může být propojena jednou linkou, více linkami, případně nemusí být propojena vůbec. Každá linka propojuje dvojici serverů, parametrem linky je její latence v milisekundách. Všechny linky jsou obousměrné (duplexní). Dvojice serverů může komunikovat lze buď přímo, nebo přes několik mezilehlých serverů. Pokud komunikace probíhá přes mezilehlé servery, je latence takového spojení daná pouze součtem latencí použitých linek.
+
+Pro takto definovanou síťovou infrastrukturu potřebujeme počítat některé její vlastnosti. Zajímá nás řešení dvou typů problémů:
+
+nalezení "středu" sítě (center). Hledáme server takový, že latence spojení mezi tímto serverem a ostatními servery je co nejmenší. Pokud zvolíme nějaký server X za střed sítě, dostaneme pro ostatní servery A, B, C, ... latence spojení lX-A, lX-B, lX-C, ... Zaměříme se na maximum těchto hodnot: max { lX-A, lX-B, lX-C, ... }, chceme zvolit takové X, aby toto maximum bylo co nejmenší možné.
+
+Předpokládejme síť podle obrázku:
+
+
+Latence spojení jsou shrnuté v následující tabulce:
+
+        A     B    C    D     max
+   A    *    30   50   10      50
+   B    30    *   40   40      40 
+   C    50   40    *   60      60
+   D    10   40   60    *      60
+   
+Střed v této síti je server B. Pro server B vychází nejvyšší latence spojení B-D s hodnotou 40ms, volba jiného středu je vždy horší.
+Může se stát, že v dané síti existuje více stejně dobrých středů. Pak za řešení považujeme libovolný z nich. Problém nemá rozumné řešení, pokud se pokusíme najít střed např. pro dvojici (nebo více) izolovaných sítí. Tato varianta nebude zadávaná,
+
+nalezení redundance sítě (redundancy). Pro zadanou síť a zadaný střed chceme určit, kolik nezávislých propojení existuje mezi tímto zadaným středem a ostatními servery v síti. Tento parametr ukazuje odolnost spojení při výpadku linky.
+V ukázkové síti můžeme např. hledat počet nezávislých spojení mezi středem B a serverem A. Zřejmé je spojení B-A, dále B-C-D-A a B-C-A. Vyjmenovaná spojení jsou nezávislá (mají společné servery, ale nemají společnou žádnou linku, mezi B a C jsou dvě nezávislé linky). Pro síť v ukázce dojdeme k výsledku:
+
+   B-A: 3  (B-A, B-C-D-A, B-C-A)
+   B-C: 3  (B-C, B-C, B-A-C)
+   B-D: 2  (B-A-D, B-C-D)
+   
+Vaším úkolem je realizovat třídu CSolver, která dokáže takové problémy řešit. Oba uvedené problémy jsou výpočetně náročnější a oba problémy je potřeba řešit rychle. Proto bude využito vláken k rozdělení výpočetní zátěže na více CPU a asynchronního modelu výpočtu.
+
+Třída CSolver má modelovat opakované výpočty obou výše popsaných problémů. Problémy zadávají zákaznici (instance třídy CCustomer, vytvořené testovacím prostředím a předané CSolver). Zákaznici předávají problémy (instance tříd CCenter a CRedundancy), Vaše implementace CSolver si instance problému převezme, zpracuje je a vyřešené je zadávajícímu vrátí.
+
+Vaše implementace si vytvoří pracovní vlákna, jejich počet je předán při spouštění výpočtu. Dále, pro načítání problémů si vytvořte dvě pomocná vlákna pro každého zákazníka. Tato vlákna budou volat odpovídající metody instance CCustomer, jedno vlákno bude volat funkci pro doručování problémů typu center, druhé pro doručování problémů redundancy. Zadaný problém má podobu instance třídy CCenter nebo třídy CRedundancy (podle typu úlohy, instance jsou předané jako smart pointery - shared_ptr<CCenter> a shared_ptr<CRedundancy>, pro zkrácení zápisu jsou pro smart pointery vytvořené aliasy ACenter a ARedundancy). která přebírají zadávané problémy, nejsou určena k tomu, aby počítala řešení, jejich úkolem je pouze předání problémů dále k pracovním vláknům.
+
+Pracovních vláken vytvoříte více (podle parametrů při inicializaci). Pracovní vlákna vyřeší zadanou instanci problémů a podle výsledků vyplní příslušné složky instance ACenter / ARedundancy. Po vyplnění informují zadavatele o dokončení výpočtu dané instance problému tím, že zavolají odpovídající metodu zadávajícího zákazníka a předají mu vyplněnou instanci problému.
+
+Jak již bylo řečeno, načítací vlákna slouží pouze k odebírání požadavků od zákazníků a k předávání těchto požadavků pracovním vláknům. Počet načítacích vláken vláken je dán dvojnásobkem počtu zákazníků. Pokud by načítací vlákna rovnou řešila zadávané problémy a zákazníků bylo mnoho, vedlo by takové řešení k neefektivnímu využívání CPU (mnoho rozpracovaných problémů, časté přepínání kontextu, ...). Proto požadované řešení ponechává výpočty pouze na pracovních vláknech, kterých je pouze zadaný fixní počet.
+
+Rozhraním vaší implementace bude třída CSolver. V této třídě musí být k dispozici metody podle popisu níže (mohou existovat i další privátní metody potřebné pro Vaší implementaci):
+
+implicitní konstruktor
+inicializuje instanci třídy.
+destruktor
+uvolní prostředky alokované instancí CSolver.
+Start (thr)
+metoda spustí vlastní výpočet. V této metodě vytvoříte potřebná pracovní vlákna pro výpočty. Pracovních vláken vytvořte celkem thr podle hodnoty parametru. Tím se spustí obsluha požadavků od zákazníků. Metoda Start se po spuštění pracovních vláken okamžitě vrací (tedy nečeká na doběhnutí výpočtů).
+Stop ()
+metoda informuje, že se mají ukončit výpočty. Tedy je potřeba převzít zbývající požadavky od existujících zákazníků, počkat na jejich vypočtení a vrácení výsledků. Metoda Stop se vrátí volajícímu po doběhnutí a uvolnění jak načítacích, tak pracovních vláken. Metoda Stop se musí vrátit do volajícího. Neukončujte celý program (nevolejte exit a podobné funkce), pokud ukončíte celý program, budete hodnoceni 0 body.
+AddCustomer ( c )
+metoda přidá dalšího zákazníka do seznamu zákazníků obsluhovaných touto instancí. Parametrem je smart pointer (shared_ptr<CCustomer>, zkráceně ACustomer) začleňovaného zákazníka. Metoda AddCustomer musí mj. vytvořit dvě pomocná načítací vlákna, která budou tohoto nového zákazníka obsluhovat. Pozor: metodu lze zavolat ještě před voláním Start (tedy zákazníci jsou obsluhovaní, ale výpočetní vlákna ještě neexistují), tak i po spuštění Start (nový zákazník je přidán k existujícím a je zahájena jeho obsluha).
+Solve (center)
+- metoda vypočte sekvenčně jeden zadaný problém typu ACenter (parametr). Testovací prostředí nejprve zkouší sekvenční řešení, abyste případně snáze odhalili chyby v implementaci algoritmu.
+Solve (redundancy)
+- metoda vypočte sekvenčně jeden zadaný problém typu ARedundancy (parametr). Testovací prostředí nejprve zkouší sekvenční řešení, abyste případně snáze odhalili chyby v implementaci algoritmu.
+Třída CCustomer definuje rozhraní jednoho zákazníka. Zákazník je implementován v testovacím prostředí a je předán Vaší implementaci v podobě smart pointeru (shared_ptr<CCustomer> alias ACustomer). Rozhraní CCustomer má následující metody:
+
+destruktor
+uvolňuje prostředky alokované pro zákazníka,
+GenCenter()
+metoda po zavolání vrací další instanci problému center ke zpracování. Návratovou hodnotou je smart pointer (shared_ptr<CCenter> alias ACenter)
+s popisem problému k vyřešení. Pokud je vrácen prázdný smart pointer (obsahuje NULL), znamená to, že daný zákazník již nemá žádný další problém typu center k vyřešení (ale stále může dodávat problémy typu redundancy). Pokud GenCenter vrátí prázdný ukazatel, lze ukončit příslušné načítací vlákno.
+Solved ( center )
+metodou se předá vyřešený problém typu center zpět zákazníkovi. Je potřeba vrátit vyřešený problém tomu zákazníkovi, který problém zadal. Dále, je potřeba vrátit tu samou instanci problému, kterou dříve předala metoda GenCenter, pouze je v ní potřeba vyplnit vypočítané hodnoty. Metodu Solved lze volat rovnou z pracovního vlákna, které dokončí výpočet.
+GenRedundancy()
+metoda po zavolání vrací další instanci problému redundancy ke zpracování. Návratovou hodnotou je smart pointer (shared_ptr<CRedundancy> alias ARedundancy)
+s popisem problému k vyřešení. Pokud je vrácen prázdný smart pointer (obsahuje NULL), znamená to, že daný zákazník již nemá žádný další problém typu redundancy k vyřešení (ale stále může dodávat problémy typu center). Pokud GenRedundancy vrátí prázdný ukazatel, lze ukončit příslušné načítací vlákno.
+Solved ( redundancy )
+metodou se předá vyřešený problém typu redundancy zpět zákazníkovi. Je potřeba vrátit vyřešený problém tomu zákazníkovi, který problém zadal. Dále, je potřeba vrátit tu samou instanci problému, kterou dříve předala metoda GenRedundancy, pouze je v ní potřeba vyplnit vypočítané hodnoty. Metodu Solved lze volat rovnou z pracovního vlákna, které dokončí výpočet.
+Třída CCenter je deklarovaná a implementovaná v testovacím prostředí. Pro testování Vaší implementace je dispozici v bloku podmíněného překladu (ponechte jej tak). Význam složek je následující:
+
+m_Links
+seznam linek, které propojují servery v síti. Tato složka je vyplněna testovacím prostředím při zadávání problému, Vaše implementace ji může číst, ale ne zapisovat.
+m_Center
+C++ řetězec se jménem serveru v nalezeném středu sítě (viz popis problému center výše). Vaše implementace musí vyplnit tuto složku před odevzdáním vyřešeného problému.
+m_Delays
+asociativní pole udávající latenci spojení mezi nalezeným středem sítě a ostatními servery v síti.Vaše implementace musí vyplnit tuto složku před odevzdáním vyřešeného problému.
+m_MaxDelay
+maximum z latencí spojení z nalezeného středu sítě. Jedná se o maximum z hodnot v asociativním poli m_Delays. Vaše implementace musí vyplnit tuto složku před odevzdáním vyřešeného problému.
+implicitní konstruktor, metoda AddLink, operátor pro výstup
+pomocné metody pro vytváření nastavování instance.
+Třída CRedundancy je deklarovaná a implementovaná v testovacím prostředí. Pro testování Vaší implementace je dispozici v bloku podmíněného překladu (ponechte jej tak). Význam složek je následující:
+
+m_Links
+seznam linek, které propojují servery v síti. Tato složka je vyplněna testovacím prostředím při zadávání problému, Vaše implementace ji může číst, ale ne zapisovat.
+m_Center
+C++ řetězec se jménem serveru ve středu sítě (viz popis problému redundancy výše). Bude testována redundance tras z tohoto serveru do ostatních serverů v zadané síti. Složka je vyplněna testovacím prostředím při zadávání problému, Vaše implementace ji může číst, ale ne zapisovat.
+m_Redundancy
+asociativní pole udávající počet nezávislých spojení mezi středem a ostatními servery v síti. Vaše implementace musí vyplnit tuto složku před odevzdáním vyřešeného problému.
+implicitní konstruktor, metoda AddLink, operátor pro výstup
+pomocné metody pro vytváření nastavování instance.
+Třída CLink je deklarovaná a implementovaná v testovacím prostředí. Pro testování Vaší implementace je dispozici v bloku podmíněného překladu (ponechte jej tak). Význam složek je následující:
+
+konstruktor
+pomocný konstruktor pro vytváření instance.
+m_From, m_To
+jména serverů, které linka propojuje (linka je symetrická).
+m_Delay
+latence linky
+Odevzdávejte zdrojový kód s implementací požadované třídy CSolver s požadovanými metodami. Můžete samozřejmě přidat i další podpůrné třídy a funkce. Do Vaší implementace nevkládejte funkci main ani direktivy pro vkládání hlavičkových souborů. Funkci main a hlavičkové soubory lze ponechat pouze v případě, že jsou zabalené v bloku podmíněného překladu.
+
+Využijte přiložený ukázkový soubor. Celá implementace patří do souboru solution.cpp, dodaný soubor je pouze mustr. Pokud zachováte bloky podmíněného překladu, můžete soubor solution.cpp odevzdávat jako řešení úlohy.
+
+Při řešení lze využít pthread nebo C++11 API pro práci s vlákny (viz vložené hlavičkové soubory). Dostupný kompilátor g++ verze 4.9, tato verze kompilátoru zvládá většinu C++11 konstrukcí.
+
+Nápověda:
+Nejprve implementujte sekvenční funkce řešení problémů center/redundancy. Správnost implementace lze ověřit lokálně pomocí infrastruktury v přiloženém archivu. Až budete mít funkce lokálně otestované, můžete je zkusit odevzdat na Progtest (pro tento pokus nechte ostatní metody třídy CSolver s prázdným tělem). Takové řešení samozřejmě nedostane žádné body, ale uvidíte, zda správně projde sekvenčními testy.
+Abyste zapojili co nejvíce jader, zpracovávejte několik problémů najednou. Vyzvedněte je pomocí opakovaného volání GenCenter/GenRedundancy jednotlivých zákazníků, okamžitě po vyřešení je vraťte voláním metod Solve. Není potřeba dodržovat pořadí při vracení řešení. Pokud budete najednou zpracovávat pouze jeden problém, nejspíše zaměstnáte pouze jedno vlákno a ostatní vlákna budou čekat bez užitku.
+Instance CSolver je vytvářená opakovaně, pro různé vstupy. Nespoléhejte se na inicializaci globálních proměnných - při druhém a dalším zavolání budou mít globální proměnné hodnotu jinou. Je rozumné případné globální proměnné vždy inicializovat v konstruktoru nebo na začátku metody Start. Ještě lepší je nepoužívat globální proměnné vůbec.
+Nepoužívejte mutexy a podmíněné proměnné inicializované pomocí PTHREAD_MUTEX_INITIALIZER, důvod je stejný jako v minulém odstavci. Použijte raději pthread_mutex_init().
+Testovací prostředí samo o sobě nevytváří žádná vlákna, tedy metoda Start sama o sobě nemusí být reentrantní (může používat globální proměnné, s omezením výše).
+Instance tříd CCenter / CRedundancy alokovalo testovací prostředí při vytváření příslušných smart pointerů. K uvolnění dojde automaticky po zrušení všech odkazů. Uvolnění těchto instancí tedy není Vaší starostí, stačí zrušit všechny odkazy na takto předané smart pointery. Váš program je ale zodpovědný za uvolnění všech ostatních prostředků, které si alokoval.
+Problémy musíte načítat, zpracovávat a odevzdávat průběžně. Postup, kdy si všechny problémy načtete do paměťových struktur a teprve pak je začnete zpracovávat, nebude fungovat. Takové řešení skončí deadlockem v prvním testu s více vlákny. Musíte zároveň obsluhovat požadavky typu center i redundancy. Řešení, které se bude snažit nejprve vyřešit všechny problémy typu center a pak začne obsluhovat problémy redundancy, skončí taktéž deadlockem.
+Musíte najednou obsluhovat všechny přidané zákazníky. Pokud se budete snažit nejprve obsloužit zákazníka A, následně pouze zákazníka B, ..., skončíte taktéž v deadlocku.
+Volání metod Solve je reentrantní, není potřeba je serializovat (obalovat mutexy). Každý vyřešený problém odevzdávejte právě 1x. Rozumné je volat metody Solve přímo z pracovního vlákna, které pro daný problém dokončilo analýzu.
+Neukončujte metodu Stop pomocí exit, pthread_exit a podobných funkcí. Pokud se funkce Stop nevrátí do volajícího, bude Vaše implementace vyhodnocena jako nesprávná.
+Využijte přiložená vzorová data. V archivu jednak naleznete ukázku volání rozhraní a dále několik testovacích vstupů a odpovídajících výsledků.
+V testovacím prostředí je k dispozici STL. Myslete ale na to, že ten samý STL kontejner nelze najednou zpřístupnit z více vláken. Více si o omezeních přečtěte např. na C++ reference - thread safety.
+Testovací prostředí je omezené velikostí paměti. Není uplatňován žádný explicitní limit, ale VM, ve které testy běží, je omezena 4 GiB celkové dostupné RAM. Úloha může být dost paměťově náročná, zejména pokud se rozhodnete pro jemné členění úlohy na jednotlivá vlákna. Pokud se rozhodnete pro takové jemné rozčlenění úlohy, možná budete muset přidat synchronizaci běhu vláken tak, aby celková potřebná paměť v žádný okamžik nepřesáhla rozumný limit. Pro běh máte garantováno, že Váš program má k dispozici nejméně 500 MiB pro Vaše data (data segment + stack + heap). Pro zvídavé - zbytek do 4GiB je zabraný běžícím OS, dalšími procesy, zásobníky Vašich vláken a nějakou rezervou.
+Pokud se rozhodnete pro všechny bonusy, je potřeba velmi pečlivě nastavovat granularitu řešeného problému. Pokud řešený problém rozdělíte na příliš mnoho drobných podproblémů, začne se příliš mnoho uplatňovat režie. Dále, pokud máte najednou rozpracováno příliš mnoho problémů (a každý je rozdělen na velké množství podproblémů), začne se výpočet dále zpomalovat (mj. se začnou hůře využívat cache CPU). Aby se tomu zabránilo, řídí referenční řešení počet najednou rozpracovaných úloh (navíc dynamicky podle velikosti rozpracované úlohy).
+Co znamenají jednotlivé testy:
+Test algoritmu (sekvencni)
+Testovací prostředí opakovaně volá metody Solve(center)/Solve(redundancy) pro různé vstupy a kontroluje vypočtené výsledky. Slouží pro otestování implementace Vašeho algoritmu. Není vytvářena instance CSolver a není volaná metoda Start. Na tomto testu můžete ověřit, zda Vaše implementace algoritmu je dostatečně rychlá. Testují se jednak data z dodané ukázky a dále i náhodně generované problémy.
+Základní test/test několika/test mnoha thready
+Testovací prostředí vytváří instanci CSolver pro různý počet vláken a zákazníků.
+Test zahlcení
+Testovací prostředí generuje velké množství požadavků a kontroluje, zda si s tím Vaše implementace poradí. Pokud nebudete rozumně řídit počet rozpracovaných požadavků, překročíte paměťový limit.
+Test zrychleni vypoctu
+Testovací prostředí spouští Vaši implementaci pro ta samá vstupní data s různým počtem vláken. Měří se čas běhu (wall i CPU). S rostoucím počtem vláken by měl wall time klesat, CPU time mírně růst (vlákna mají možnost běžet na dalších CPU). Pokud wall time neklesne, nebo klesne málo (např. pro 2 vlákna by měl ideálně klesnout na 0.5, existuje určitá rezerva), test není splněn.
+Busy waiting - pomale pozadavky
+Do volání GenCenter/GenRedundancy testovací prostředí vkládá uspávání vlákna (např. na 100 ms). Výpočetní vlákna tím nemají práci. Pokud výpočetní vlákna nejsou synchronizovaná blokujícím způsobem, výrazně vzroste CPU time a test selže.
+Busy waiting - pomale notifikace
+Do volání Solved je vložena pauza. Pokud jsou špatně blokována vlákna načítající vstup, výrazně vzroste CPU time. (Tento scénář je zde méně pravděpodobný.) Dále tímto testem neprojdete, pokud zbytečně serializujete volání Solved.
+Busy waiting - complex
+Je kombinací dvou posledně jmenovaných testů.
+Velmi mnoho zákazníků
+Testovací prostředí zkouší přidávat mnoho zákazníků, každý zákazník má pouze několik málo požadavků a skončí. Po skončení zákazníka je potřeba průběžně ukončovat a uvolňovat načítací vlákna. Pokud se uvolnění načítacích vláken neděje průběžně, enormně vzroste paměťová náročnost a program spadne. Jedná se o test bonusový.
+Test rozlozeni zateze 1
+Testovací prostředí zkouší, zda se do řešení jednoho problému typu redundancy dokáže zapojit více dostupných vláken. Pokud chcete v tomto testu uspět, musíte Váš program navrhnout tak, aby bylo možné využít více vláken i při analýze jedné instance problému. Jedná se o test bonusový.
+Test rozlozeni zateze 2
+Testovací prostředí zkouší, zda se do řešení jednoho problému typu center dokáže zapojit více dostupných vláken. Pokud chcete v tomto testu uspět, musíte Váš program navrhnout tak, aby bylo možné využít více vláken i při analýze jedné instance problému. Jedná se o test bonusový.
+Jak to vyřešit - pozor, SPOILER
+Pokud se nechcete obrat o dobrý pocit, že jste úlohu vyřešili zcela sami, nečtěte dále.
+
+Oba problémy jsou řešitelné pomocí stejného principu - převodu na grafový problém.
+Problém typu center je problém hledání cest mezi uzly. Efektivní algoritmus to dokáže v čase O(n^3), za kterým následuje krátké zpracování nalezených výsledků.
+Problém typu redundancy lze převést na zjednodušenou variantu problému toků v síti. Efektivní algoritmus to dokáže v čase Ω(n^2) - O(n^4), v závislosti na podobě grafu.
+Vzhledem k heterogennímu charakteru vstupních dat se hodí objektový návrh s polymorfismem.
+Další nápověda - SUPERSPOILER
+Podle potřeby v průběhu řešení úlohy zveřejníme další nápovědy pro tápající studenty.
